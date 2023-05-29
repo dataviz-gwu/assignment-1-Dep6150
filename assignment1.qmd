@@ -1,8 +1,19 @@
 ---
 title: "Assignment 1"
-author: "Your Name"
+author: "Daniel Puig"
 format: html
 ---
+```{r}
+#| label: Library Block
+
+library(vdemdata)
+library(wbstats)
+library(dplyr)
+library(janitor)
+library(countrycode)
+library(readr)
+library(corrplot)
+```
 
 **Overview:** *For this assignment, you are going to download some variables using the `wbstats` and `vdemdata` packages. Then you are going to wrangle these data and merge the two data sets into one and analyze how they relate to women's representation in national parliaments. Do your work for each step in the code chunks provided. Be sure to label your code chunks.* 
 
@@ -15,7 +26,30 @@ format: html
 *Make sure to load the packages that you need and `glimpse()` the data or `View()` it to make sure that it downloaded properly.* 
 
 ```{r}
+#| label: v-dem data download
 
+vdem_download <- vdem |>
+  filter(year >= 1990) |>
+  select(
+    country = country_name,
+    vdem_ctry_id = country_id,
+    year,
+    lib_dem_index = v2x_libdem,
+    CSO_women_participation = v2csgender,
+    region = e_regionpol_6C
+  ) |>
+  mutate(
+    region = case_match(region, 
+                        1 ~ "Eastern Europe",
+                        2 ~ "Latin America",
+                        3 ~ "Middle East",
+                        4 ~ "Africa",
+                        5 ~ "The West",
+                        6 ~ "Asia")
+  )
+  
+
+glimpse(vdem_download)
 ```
 
 ## Step 2: Download data from the World Bank
@@ -25,7 +59,19 @@ format: html
 *Make sure that the indicator has enough data to conduct your analysis, i.e. that it has data for most countries and years.*
 
 ```{r}
+#| label: World Bank data download
 
+indicators <- c("percent_with_internet" = "IT.NET.USER.ZS", "women_rep" = "SG.GEN.PARL.ZS")
+
+world_bank_download <- wb_data(indicators, mrv = 50) |>
+  select(!iso2c) |>
+  rename(year = date) |>
+  mutate(
+    percent_with_internet = round_to_fraction(percent_with_internet, denominator = 100),
+    women_rep = round_to_fraction(women_rep, denominator = 100)
+  )
+
+glimpse(world_bank_download)
 ```
 
 ## Step 3: Merge the data
@@ -33,15 +79,70 @@ format: html
 *Now add country codes using the `countrycode` package and merge the data using `left_join()`.* 
 
 ```{r}
+#| label: Merging datasets
 
+
+vdem_download <- vdem_download |>    
+  mutate(iso3c = countrycode(sourcevar = vdem_ctry_id, 
+        origin = "vdem",         
+        destination = "wb"))  |> 
+  relocate(iso3c, .after = vdem_ctry_id)
+
+merged_data <- left_join(vdem_download, world_bank_download, by = c("iso3c", "year")) |>
+  rename(country = country.x) |>
+  select(!country.y)
+
+glimpse(merged_data)
 ```
 
 ## Step 4: Summarize your combined data set
 
 *Use `group_by()`, `summarize()` and `arrange()` to glean insights about your data. For example, how do regions compare on mean values of women's representation and how do these values relate to the values of other variables in your data set? Which countries stand out in terms of women's representation? Etc.* 
 
+```{r}
+#| label: Summary grouped by region
+
+data_summary <- merged_data |> 
+  group_by(region)  |> 
+  summarize(           
+    lib_dem_index = mean(lib_dem_index, na.rm = TRUE), 
+    CSO_women_participation = mean(CSO_women_participation, na.rm = TRUE), 
+    percent_with_internet = mean(percent_with_internet, na.rm = TRUE), 
+    women_rep = mean(women_rep, na.rm = TRUE)
+  ) |> 
+  arrange(desc(women_rep)) 
+
+
+data_summary
+```
+```{r}
+#| label: Summary grouped by country
+
+data_summary <- merged_data |> 
+  group_by(country)  |> 
+  summarize(           
+    lib_dem_index = mean(lib_dem_index, na.rm = TRUE), 
+    CSO_women_participation = mean(CSO_women_participation, na.rm = TRUE), 
+    percent_with_internet = mean(percent_with_internet, na.rm = TRUE), 
+    women_rep = mean(women_rep, na.rm = TRUE)
+  ) |> 
+  arrange(desc(women_rep)) 
+
+
+data_summary
+```
+```{r}
+#| label: Correlation plot
+#I was just curious what the correlation plot between the the variables I selected would look like.
+data_for_cor <- na.omit(merged_data |> select(lib_dem_index, CSO_women_participation, percent_with_internet, women_rep))
+
+test = cor(data_for_cor)
+
+corrplot(test)
+```
 
 ## Step 5: Interpret your data
 
-*Write a paragraph or so relating your insights to the Norris reading about electoral reform and women's representation. Picking a handful of country cases from your data, how does your analysis relate to her arguments about the relevance of electoral systems, statutory quotas, reserved seats or voluntary quotas?* 
+*Write a paragraph or so relating your insights to the Norris reading about electoral reform and women's representation. Picking a handful of country cases from your data, how does your analysis relate to her arguments about the relevance of electoral systems, statutory quotas, reserved seats or voluntary quotas?*
 
+I'll be honest I messed up my time schedule for this week and did not get around to the reading. I'll make sure to leave myself more time moving forward. Hope you had a good holiday weekend professor!
